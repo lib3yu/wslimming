@@ -10,6 +10,16 @@ WSL2 uses virtual hard disks (VHDX) to store Linux distribution data. These file
 
 **Requirements**: Administrator privileges, PowerShell, WSL2
 
+### Option 1: Run directly from GitHub (No clone required)
+
+Open `PowerShell` as **Administrator** and run:
+
+```powershell
+irm https://raw.githubusercontent.com/lib3yu/wslimming/refs/heads/main/wslimming.ps1 -OutFile wslimming.ps1; .\wslimming.ps1
+```
+
+### Option 2: Clone and run locally
+
 1. Open `PowerShell` or `Command Prompt` as **Administrator**
 
 2. Navigate to the script directory
@@ -17,6 +27,11 @@ WSL2 uses virtual hard disks (VHDX) to store Linux distribution data. These file
 3. Run the script
 
 ```powershell
+# Clone the repository
+git clone https://github.com/lib3yu/wslimming.git
+cd wslimming
+
+# Run the script
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\wslimming.ps1
 ```
 
@@ -25,6 +40,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\wslimming.ps1
 1. Enumerates installed WSL2 distributions from the registry
 2. Prompts you to select one if multiple are installed
 3. Locates the `ext4.vhdx` file for that distribution
+3.1. Runs fstrim to trim unused blocks (optional)
 4. Shuts down WSL and uses DISKPART to compact the VHDX file
 
 ## Notes
