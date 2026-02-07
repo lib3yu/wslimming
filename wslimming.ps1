@@ -128,14 +128,21 @@ if ($answer.ToUpper() -ne 'Y') {
 #------------------------------------------------------------
 # Step 3.1 – Trim filesystem before compaction
 #------------------------------------------------------------
-Write-Host "Trimming unused blocks in '$distro'..." -ForegroundColor Cyan
-$fstrimResult = wsl.exe -d $distro -u root -- sh -c "fstrim -av" 2>&1
-Write-Host $fstrimResult
-if ($LASTEXITCODE -ne 0) {
-  Write-Warning "fstrim failed (exit code $LASTEXITCODE), but continuing with compaction..."
+Write-Host "`nDo you want to run fstrim to trim unused blocks? (Y/N) " -ForegroundColor DarkCyan -NoNewline
+$fstrimChoice = Read-Host
+if ($fstrimChoice.ToUpper() -eq 'Y') {
+  Write-Host "`nTrimming unused blocks in '$distro'..." -ForegroundColor Cyan
+  $fstrimResult = wsl.exe -d $distro -u root -- sh -c "fstrim -av" 2>&1
+  Write-Host $fstrimResult
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "fstrim failed (exit code $LASTEXITCODE), but continuing with compaction..."
+  }
+  else {
+    Write-Host "Filesystem trim completed." -ForegroundColor Green
+  }
 }
 else {
-  Write-Host "Filesystem trim completed." -ForegroundColor Green
+  Write-Host "Skipping fstrim." -ForegroundColor Yellow
 }
 
 
@@ -147,6 +154,7 @@ wsl.exe --shutdown
 if ($LASTEXITCODE -ne 0) {
   Throw "Failed to shut down WSL. Are you running as Administrator?"
 }
+Write-Host "WSL has been shut down successfully.`n" -ForegroundColor Green
 
 # Build and run diskpart script
 $dpScript = @"
@@ -160,28 +168,50 @@ exit
 $tempFile = [IO.Path]::GetTempFileName()
 Set-Content -LiteralPath $tempFile -Value $dpScript -Encoding ASCII
 
-Write-Host "Running DiskPart to compact the VHDX. Be patient, this might take a while..." -ForegroundColor Cyan
+# Pre-compaction confirmation
+Write-Host "The VHDX file is ready for compaction." -ForegroundColor Cyan
+Write-Host "WARNING: This process cannot be interrupted!" -ForegroundColor Yellow
+Write-Host "Do you want to proceed with the compaction? (Y/N) " -ForegroundColor DarkCyan -NoNewline
+$confirmCompact = Read-Host
+if ($confirmCompact.ToUpper() -ne 'Y') {
+  Write-Warning "Compaction canceled."
+  exit
+}
+
+Write-Host "`nRunning DiskPart to compact the VHDX. Be patient, this might take a while..." -ForegroundColor Cyan
+Write-Host ""
+
+# Prevent Ctrl+C interruption
+[Console]::TreatControlCAsInput = $true
 
 # Avoids to print too many same lines
 # Keep track of the last % we printed
-$lastPct = -1
+try {
+  $lastPct = -1
 
-diskpart /s $tempFile | ForEach-Object {
-  # Does this line look like "20 percent completed"? 
-  if ($_ -match '(\d+)\s+percent') {
-    $pct = [int]$Matches[1]
-    if ($pct -ne $lastPct) {
-      Write-Host "$pct% completed"
-      $lastPct = $pct
+  diskpart /s $tempFile | ForEach-Object {
+    # Does this line look like "20 percent completed"?
+    if ($_ -match '(\d+)\s+percent') {
+      $pct = [int]$Matches[1]
+      if ($pct -ne $lastPct) {
+        Write-Host "$pct% completed"
+        $lastPct = $pct
+      }
+    }
+    else {
+      # non‐percent lines we print verbatim
+      if ($_ -match '\S') {
+        Write-Host $_
+      }
     }
   }
-  else {
-    # non‐percent lines we print verbatim
-    if ($_ -match '\S') {
-      Write-Host $_
-    }
-  }
+}
+finally {
+  # Restore Ctrl+C behavior
+  [Console]::TreatControlCAsInput = $false
 }
 
 # Clean up
 Remove-Item $tempFile -ErrorAction SilentlyContinue
+
+Write-Host "Compaction completed`n" -ForegroundColor Green
