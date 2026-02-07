@@ -13,6 +13,24 @@
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\wslimming.ps1 #>
 
 #------------------------------------------------------------
+# Administrator privilege check
+#------------------------------------------------------------
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+  Write-Host "ERROR: This script must be run as Administrator." -ForegroundColor Red
+  Write-Host ""
+  Write-Host "Please:" -ForegroundColor Yellow
+  Write-Host "  1. Close this window"
+  Write-Host "  2. Right-click on PowerShell or Command Prompt"
+  Write-Host "  3. Select 'Run as Administrator'"
+  Write-Host "  4. Run the script again"
+  Write-Host ""
+  Write-Host "Exiting script..." -ForegroundColor Gray
+  Write-Host ""
+  exit 1
+}
+
+#------------------------------------------------------------
 # Step 1 – Enumerate distros from the registry
 #------------------------------------------------------------
 $lxssKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
