@@ -10,10 +10,13 @@ WSL2 uses virtual hard disks (VHDX) to store Linux distribution data. These file
 
 **Requirements**: Administrator privileges, PowerShell, WSL2
 
+1. Open `PowerShell` or `Command Prompt` as **Administrator**
+
+2. Navigate to the script directory
+
+3. Run the script
+
 ```powershell
-# 1. Open PowerShell or Command Prompt as Administrator
-# 2. Navigate to the script directory
-# 3. Run the script
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\wslimming.ps1
 ```
 

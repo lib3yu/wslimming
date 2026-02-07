@@ -64,6 +64,11 @@ else {
 $distro   = $selected.Name
 $basePath = $selected.BasePath
 
+# Remove \\?\ prefix if present (NT namespace prefix that breaks Join-Path)
+if ($basePath.StartsWith("\\?\")) {
+  $basePath = $basePath.Substring(4)
+}
+
 Write-Host "`nSelected distro: $distro" -ForegroundColor DarkYellow
 Write-Host "BasePath: $basePath"
 
@@ -119,14 +124,11 @@ else {
 #------------------------------------------------------------
 # Step 4 – Shutdown WSL & Compact
 #------------------------------------------------------------
-Write-Host "Shutting down distro '$distro'..." -ForegroundColor Cyan
-wsl.exe --terminate $distro
+Write-Host "Shutting down WSL to ensure VHDX is released..." -ForegroundColor Cyan
+wsl.exe --shutdown
 if ($LASTEXITCODE -ne 0) {
-  Throw "Failed to terminate distro '$distro'. Are you running as Administrator?"
+  Throw "Failed to shut down WSL. Are you running as Administrator?"
 }
-# Wait for WSL to fully release the VHDX file
-Write-Host "Waiting for WSL to fully release the VHDX file..." -ForegroundColor Cyan
-Start-Sleep -Seconds 2
 
 # Build and run diskpart script
 $dpScript = @"
