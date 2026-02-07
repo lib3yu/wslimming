@@ -5,6 +5,7 @@
 1. Enumerates installed WSL2 distros via wsl.exe.
 2. If more than one, prompts you to pick one.
 3. Reads the distro's BasePath and uses its virtual disk path.
+3.1. Runs fstrim to trim unused blocks in the filesystem.
 4. Shuts down WSL and compacts ext4.vhdx (with DISKPART).
 
 .NOTES Must run as Administrator and ignore execution policy (see below).
@@ -102,6 +103,20 @@ if ($answer.ToUpper() -ne 'Y') {
 
 
 #------------------------------------------------------------
+# Step 3.1 – Trim filesystem before compaction
+#------------------------------------------------------------
+Write-Host "Trimming unused blocks in '$distro'..." -ForegroundColor Cyan
+$fstrimResult = wsl.exe -d $distro -u root -- sh -c "fstrim -av" 2>&1
+Write-Host $fstrimResult
+if ($LASTEXITCODE -ne 0) {
+  Write-Warning "fstrim failed (exit code $LASTEXITCODE), but continuing with compaction..."
+}
+else {
+  Write-Host "Filesystem trim completed." -ForegroundColor Green
+}
+
+
+#------------------------------------------------------------
 # Step 4 – Shutdown WSL & Compact
 #------------------------------------------------------------
 Write-Host "Shutting down distro '$distro'..." -ForegroundColor Cyan
@@ -109,6 +124,9 @@ wsl.exe --terminate $distro
 if ($LASTEXITCODE -ne 0) {
   Throw "Failed to terminate distro '$distro'. Are you running as Administrator?"
 }
+# Wait for WSL to fully release the VHDX file
+Write-Host "Waiting for WSL to fully release the VHDX file..." -ForegroundColor Cyan
+Start-Sleep -Seconds 2
 
 # Build and run diskpart script
 $dpScript = @"
