@@ -104,10 +104,10 @@ if ($answer.ToUpper() -ne 'Y') {
 #------------------------------------------------------------
 # Step 4 – Shutdown WSL & Compact
 #------------------------------------------------------------
-Write-Host "Shutting down WSL..." -ForegroundColor Cyan
-wsl.exe --shutdown
+Write-Host "Shutting down distro '$distro'..." -ForegroundColor Cyan
+wsl.exe --terminate $distro
 if ($LASTEXITCODE -ne 0) {
-  Throw "Failed to shut down WSL. Are you running as Administrator?"
+  Throw "Failed to terminate distro '$distro'. Are you running as Administrator?"
 }
 
 # Build and run diskpart script
