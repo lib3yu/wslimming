@@ -1,10 +1,12 @@
-﻿<# 
+﻿<#
 .SYNOPSIS Compact WSL2 ext4.vhdx to recover disk space.
 
 .DESCRIPTION wslimming.ps1
 1. Enumerates installed WSL2 distros via wsl.exe.
 2. If more than one, prompts you to pick one.
 3. Reads the distro's BasePath and uses its virtual disk path.
+3.0.1. Analyzes WSL filesystem space usage.
+3.0.2. Analyzes package sizes (Debian/Ubuntu only).
 3.1. Runs fstrim to trim unused blocks in the filesystem.
 4. Shuts down WSL and compacts ext4.vhdx (with DISKPART).
 
@@ -21,6 +23,36 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\wslimming.ps1
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
+
+#------------------------------------------------------------
+# Helper function: Execute bash script in WSL via temp file
+#------------------------------------------------------------
+function Invoke-WslScript {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Distro,
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptContent,
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptName,
+        [string]$Arguments = ""
+    )
+
+    # Convert to Unix line endings and base64 encode
+    $unixContent = $ScriptContent -replace "`r`n", "`n"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($unixContent)
+    $base64Content = [System.Convert]::ToBase64String($bytes)
+
+    # Write script directly to WSL file (via base64 to avoid escaping issues)
+    $wslScriptPath = "/tmp/wslimming/$ScriptName"
+    wsl -d $Distro -u root -- sh -c "mkdir -p /tmp/wslimming"
+    wsl -d $Distro -u root -- sh -c "echo '$base64Content' | base64 -d > $wslScriptPath"
+    wsl -d $Distro -u root -- chmod +x "$wslScriptPath"
+    wsl -d $Distro -u root -- bash -c "export LANG=C.UTF-8 && export LC_ALL=C.UTF-8 && '$wslScriptPath' $Arguments" 2>&1
+
+    # Clean up WSL temporary script
+    wsl -d $Distro -u root -- sh -c "rm -f $wslScriptPath"
+}
 
 #------------------------------------------------------------
 # Administrator privilege check
@@ -128,9 +160,8 @@ Write-Host "  VHDX file: $vhdx`n"
 #------------------------------------------------------------
 # Step 3.0.1 – WSL Space Analysis
 #------------------------------------------------------------
-Write-Host "`n--- WSL Space Analysis ---" -ForegroundColor Cyan
 
-$bashScriptContent = @'
+$spaceAnalysisScript = @'
 #!/bin/bash
 
 # --- Configuration ---
@@ -228,25 +259,55 @@ done <<< "$top_levels"
 echo "------------------------------------------------"
 '@
 
-# Convert to Unix line endings and base64 encode
-$unixContent = $bashScriptContent -replace "`r`n", "`n"
-$bytes = [System.Text.Encoding]::UTF8.GetBytes($unixContent)
-$base64Content = [System.Convert]::ToBase64String($bytes)
+#------------------------------------------------------------
+# Step 3.0.2 – Package Size Analysis (Debian/Ubuntu only)
+#------------------------------------------------------------
 
-# Write script directly to WSL file (via base64 to avoid escaping issues)
-$wslScriptPath = "/tmp/wslimming/where-space-lost.sh"
-wsl -d $distro -u root -- sh -c "mkdir -p /tmp/wslimming"
-wsl -d $distro -u root -- sh -c "echo '$base64Content' | base64 -d > $wslScriptPath"
-wsl -d $distro -u root -- chmod +x "$wslScriptPath"
-wsl -d $distro -u root -- bash -c "export LANG=C.UTF-8 && export LC_ALL=C.UTF-8 && '$wslScriptPath' 255" 2>&1
+$packageScriptContent = @'
+#!/bin/bash
 
-# Clean up WSL temporary script
-wsl -d $distro -u root -- sh -c "rm -f $wslScriptPath"
-Write-Host ""
+# Colors
+YELLOW='\033[1;33m'
+GRAY='\033[0;90m'
+NC='\033[0m'
+
+# Check if dpkg is available
+if ! command -v dpkg &> /dev/null; then
+    echo -e "${GRAY}Package analysis skipped: dpkg not found (non-Debian distribution)${NC}"
+    exit 0
+fi
+
+echo -e "${YELLOW}>>> Detected Debian/Ubuntu-based distribution. Analyzing package sizes... <<<${NC}"
+echo ""
+
+# Display header
+echo "Top 16 largest installed packages:"
+echo "----------------------------------------"
+
+# Execute dpkg-query and format output
+dpkg-query -Wf '${Installed-Size}\t${Package}\n' | \
+    sort -n | \
+    awk '{printf "%.2f MB\t%s\n", $1/1024, $2}' | \
+    tail -n 16
+
+echo "----------------------------------------"
+'@
+
+Write-Host "`nDo you want to run analysis WSL space? (Y/N) " -ForegroundColor DarkCyan -NoNewline
+$analysisChoice = Read-Host
+if ($analysisChoice.ToUpper() -eq 'Y') {
+  Write-Host "`n--- WSL Space Analysis ---" -ForegroundColor Cyan
+  Invoke-WslScript -Distro $distro -ScriptContent $spaceAnalysisScript -ScriptName "where-space-lost.sh" -Arguments "255"
+  Write-Host "`n--- Package Size Analysis ---" -ForegroundColor Cyan
+  Invoke-WslScript -Distro $distro -ScriptContent $packageScriptContent -ScriptName "package-analysis.sh"
+  Write-Host ""
+}
+else {
+  Write-Host "Skipping analysis." -ForegroundColor Yellow
+}
 
 
-# Color trick
-# Print the question in yellow without a newline
+
 Write-Host "Are you sure you want to proceed? (Y/N) " -ForegroundColor DarkCyan -NoNewline
 # Then read the response
 $answer = Read-Host
